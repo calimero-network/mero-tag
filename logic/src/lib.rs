@@ -115,6 +115,20 @@ pub mod pure {
 /// order over the whole record, so both replicas independently elect the same
 /// winner. WHICH side wins is arbitrary; that it is the same side everywhere is
 /// the property that matters.
+///
+/// ⚠️ **Every caller-supplied timestamp is now load-bearing.** `save_internal`
+/// merges a `Custom`-stamped entry against the stored one on every write, a
+/// node's own sequential writes included — its `Custom` arm merges "regardless
+/// of timestamp ordering", deliberately, because a rule that only ran in one
+/// direction would not be commutative. So a method handed a timestamp OLDER
+/// than the record's stored one loses to the value it meant to replace, and
+/// loses *quietly*: the method returns, `app::emit!` still fires, and the
+/// record does not change. Eight methods here take that timestamp from the
+/// caller (`rename_tracker`, `update_location`, `share_tracker`,
+/// `unshare_tracker`, `add_group_member`, `remove_group_member`,
+/// `add_tracker_to_group`, and the two constructors), so all of them share the
+/// requirement: the frontend must pass ONE monotonic clock. `workflows/
+/// logic-test.yml` violated it and is where this was found.
 fn lww_wins<T: BorshSerialize>(
     candidate: &T,
     candidate_ts: u64,
