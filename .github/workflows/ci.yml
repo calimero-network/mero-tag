@@ -164,10 +164,21 @@ jobs:
       # scenarios can name it (the default embeds the version).
       - name: Build signed dev bundle
         run: cd logic && cargo mero bundle --dev --no-icon --app-version 0.0.1 --output dist/mero-tag-dev.mpk
-      # Both pinned. merobox only requires `calimero-client-py>=0.6.28`, and
-      # client-py is the layer that actually builds the admin-API request — so an
+      # Both pinned, and the pair MUST match the merod image in workflows/.
+      # client-py is the layer that actually builds the admin-API request, so an
       # unpinned install tracks core master and reddens this job on a commit that
-      # changed nothing. The pair must match the merod image in workflows/.
+      # changed nothing — but a stale pin is just as bad in the other direction.
+      #
+      # It was: bumping the image to rc.32 while leaving client-py at 0.6.29 (a
+      # pin chosen for rc.24) failed the install with
+      #   Client error: buffer provided to decode base58 encoded string into
+      # because rc.27 removed base58 — device keys and account ids are both 64
+      # hex now — and 0.6.29 still decodes the old encoding.
+      #
+      # 0.6.75 + 0.7.0 is the pair merobox itself ships and tests: its
+      # pyproject requires `calimero-client-py>=0.7.0`, and its binary CI lane
+      # downloads the latest core RELEASE — rc.32, the image below — and is
+      # green on it. Bump both together, and bump the cache key with them.
       # merobox has had a console-verbosity knob since 0.6.30 (merobox#271): `quiet`
       # keeps the banners and the final pass/fail summary and drops the per-step
       # API-response dumps. Day to day that is what you want; to get the full detail
@@ -194,10 +205,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: pip-${{ runner.os }}-merobox-0.6.55-ccpy-0.6.29
+          key: pip-${{ runner.os }}-merobox-0.6.75-ccpy-0.7.0
       - name: Install merobox
         run: |
-          pip install -q --disable-pip-version-check "merobox==0.6.55" "calimero-client-py==0.6.29"
+          pip install -q --disable-pip-version-check "merobox==0.6.75" "calimero-client-py==0.7.0"
           merobox --version
           pip show calimero-client-py | sed -n 's/^Version: /calimero-client-py /p'
       # Schema-check first: a typo in a step name or field otherwise only shows up
