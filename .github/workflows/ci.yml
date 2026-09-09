@@ -152,8 +152,18 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y jq
       - name: Install cargo-mero
         uses: ./.github/actions/install-cargo-mero
-      - name: Build WASM
-        run: cd logic && cargo mero build
+      # A BUNDLE, not a bare wasm: rc.32 refuses a raw `.wasm` on the dev
+      # install ("not a signed application bundle"), because an `.mpk` carries a
+      # signed manifest.json next to app.wasm. `--dev` signs with the well-known
+      # development key — accepted by a local node, refused by the registry,
+      # which is the right way round for a test.
+      #
+      # `--app-version` is pinned rather than left to `--bump`, which would ask
+      # the live registry what to call a throwaway test artifact and make this
+      # lane depend on the network. `--output` pins the filename so the
+      # scenarios can name it (the default embeds the version).
+      - name: Build signed dev bundle
+        run: cd logic && cargo mero bundle --dev --no-icon --app-version 0.0.1 --output dist/mero-tag-dev.mpk
       # Both pinned. merobox only requires `calimero-client-py>=0.6.28`, and
       # client-py is the layer that actually builds the admin-API request — so an
       # unpinned install tracks core master and reddens this job on a commit that

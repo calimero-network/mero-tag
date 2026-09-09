@@ -57,7 +57,7 @@ steps:
   - name: Install Application on Node 1
     type: install_application
     node: calimero-node-1
-    path: "../logic/res/mero_tag.wasm"
+    path: "../logic/dist/mero-tag-dev.mpk"
     dev: true
     outputs:
       app_id: applicationId
@@ -65,7 +65,7 @@ steps:
   - name: Install Application on Node 2
     type: install_application
     node: calimero-node-2
-    path: "../logic/res/mero_tag.wasm"
+    path: "../logic/dist/mero-tag-dev.mpk"
     dev: true
 
   # Replaces the namespace/invite/join dance. `params` is not optional here —
