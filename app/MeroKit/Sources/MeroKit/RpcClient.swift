@@ -7,9 +7,9 @@ public final class RpcClient {
     private let store: TokenStore
     private let transport: AuthorizedTransport
 
-    /// Called when a non-auth request returns 401 (token expired/revoked).
-    /// Kept for callers that want to observe it; recovery no longer depends on
-    /// it — `AuthorizedTransport` refreshes and retries on its own.
+    /// Called when a request's credential was refused and could NOT be
+    /// recovered. A routine hourly expiry refreshes silently and never reaches
+    /// this; only a session that is actually gone does.
     public var onUnauthorized: (() -> Void)?
 
     public init(store: TokenStore, session: URLSession = .shared, authority: SessionAuthority? = nil) {

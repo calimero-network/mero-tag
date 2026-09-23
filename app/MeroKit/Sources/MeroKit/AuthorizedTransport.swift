@@ -23,7 +23,11 @@ struct AuthorizedTransport {
     /// - Parameters:
     ///   - build: builds the request for a given bearer token. Called again
     ///     with the refreshed token if the first attempt is refused.
-    ///   - onUnauthorized: legacy notification, fired on the first 401 only.
+    ///   - onUnauthorized: fired when the refusal could NOT be recovered — not
+    ///     on every 401. An hourly expiry that refreshes cleanly is not
+    ///     something an app should be told about, and an app that wired this to
+    ///     "log out" would otherwise log the user out once an hour for a
+    ///     recovery that worked.
     func send(
         build: (String?) -> URLRequest,
         onUnauthorized: (() -> Void)? = nil
@@ -34,12 +38,11 @@ struct AuthorizedTransport {
         guard let http = response as? HTTPURLResponse, let failure = http.authFailure else {
             return (data, response as? HTTPURLResponse)
         }
-        if http.statusCode == 401 { onUnauthorized?() }
-
         let refreshed: String
         do {
             refreshed = try await authority.recover(from: failure, generation: generation)
         } catch let revoked as MeroError {
+            onUnauthorized?()
             if case .authRevoked = revoked { throw revoked }
             // The refresh itself could not be delivered (offline, DNS, …). That
             // says nothing about the session, so report what the node actually
@@ -51,6 +54,7 @@ struct AuthorizedTransport {
         if let retryHttp = retryResponse as? HTTPURLResponse, let again = retryHttp.authFailure {
             // Refused again on a token minted seconds ago. Whatever this is, it
             // is not expiry — end the session rather than loop.
+            onUnauthorized?()
             throw MeroError.authRevoked(again.isRefreshable ? .invalidToken : again)
         }
         return (retryData, retryResponse as? HTTPURLResponse)
