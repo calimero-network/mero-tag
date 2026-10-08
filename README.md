@@ -35,8 +35,23 @@ Sign-in is **Calimero Cloud only**. There is no node URL, username or password.
    - **Live updates** come over SSE on the relay's Bearer session.
    - If that session can't be established, writes still work and the app refreshes on a timer instead.
 
-The session is kept in the Keychain, so a relaunch skips the wallet. After sign-in, the person opens a **space**
-(a context their account belongs to) by its ID, and picks the name other members see.
+The session is kept in the Keychain, so a relaunch skips the wallet. After sign-in, the person picks the name other
+members see and opens a **space**: a context inside a namespace. Everything below is the SDK's account layer, signed on
+the device; no node is involved.
+
+- **Create a space.** `CloudSignIn.foundNamespace` founds a namespace for this app's package (`com.calimero.mero-tag`,
+  resolved in the app registry) through the account's relay, names it, and asks the cloud to host it (HA) so people
+  without a node can be admitted. The relay then creates the space's context in it (`RelayClient.createContext`), and
+  the app opens it.
+- **Invite people.** `CloudSignIn.createNamespaceInvitation` signs an invitation to the space's namespace with this
+  device's key, naming the namespace's relays as admitters. It travels as the SDK's `InviteLink`
+  (`https://links.calimero.network/com.calimero.mero-tag/join?invitation=…`) through the share sheet; the token also
+  carries the context id and the space's name.
+- **Join.** Paste the link, or open it as a deep link (`merotag://join?invitation=…`, the scheme the wallet already
+  uses). `CloudSignIn.join` redeems it as the account; an account without a relay adopts the one that admits it. The
+  app then waits for the space to reach the relay and opens it.
+
+Opening a space by its raw ID is still possible, tucked away at the bottom of the screen (*Open a space by ID*).
 
 ## Build and run the app
 

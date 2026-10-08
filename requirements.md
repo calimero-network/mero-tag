@@ -45,7 +45,9 @@ make app-run      # xcodegen + xcodebuild + boot the Simulator + launch
 
 1. Tap **Continue with Calimero**. The Calimero wallet opens in a system sheet. Approve this device with your passkey,
    and you're back in the app.
-2. On **Open a space**, paste the space (context) ID the owner gave you, and choose the name others see.
+2. On **Choose a space**, enter the name others see, then either **Create a space** (you own it) or paste the invite
+   link someone sent you and tap **Join space**. Opening an invite link (`merotag://join?invitation=…`) does the same.
+   In a space, **Invite people** on the Space tab creates a link to share.
 3. On **Trackers**, tap **+** to create a tracker for this phone. Keep *Report this phone's location* on.
 4. Open **Map**. In the Simulator, simulate movement with **Features ▸ Location**. Anyone you share the tracker with
    sees it move live.

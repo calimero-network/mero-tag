@@ -53,6 +53,50 @@ func makeClient() -> MeroClient {
         webAuthenticator: NoWallet())
 }
 
+/// A client with a Cloud session (relayless, so nothing touches the network).
+@MainActor
+func signedInClient(restored: Bool = true) async -> MeroClient {
+    let session = CloudSession(account: Fixtures.account, device: Fixtures.account, credential: "00")
+    let client = MeroClient(
+        cloud: CloudSignIn(keyStore: .memory(), sessionStore: .memory(session), nonces: MemoryWarrantNonceStore()),
+        webAuthenticator: NoWallet())
+    if restored { await client.restoreCloudSession() }
+    return client
+}
+
+/// Records what the app asked of the account layer.
+final class FakeDirectory: SpaceDirectory, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _created: [String] = []
+    private var _invited: [String] = []
+    private var _joined: [String] = []
+    var failure: Error?
+    var hosted = true
+
+    var created: [String] { lock.withLock { _created } }
+    var invited: [String] { lock.withLock { _invited } }
+    var joined: [String] { lock.withLock { _joined } }
+
+    func createSpace(named name: String) async throws -> CreatedSpace {
+        if let failure { throw failure }
+        lock.withLock { _created.append(name) }
+        return CreatedSpace(
+            namespaceId: Fixtures.namespace, contextId: "ctx-new", hosted: hosted,
+            hostingNote: hosted ? nil : "the relay did not attest the founding")
+    }
+
+    func invite(contextId: String, spaceName: String) async throws -> SpaceInvite {
+        if let failure { throw failure }
+        lock.withLock { _invited.append(contextId) }
+        return Fixtures.invite()
+    }
+
+    func join(_ invite: SpaceInvite) async throws {
+        if let failure { throw failure }
+        lock.withLock { _joined.append(invite.namespaceId) }
+    }
+}
+
 func isolatedDefaults() -> UserDefaults {
     let name = "merotag.tests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: name)!
@@ -63,6 +107,19 @@ func isolatedDefaults() -> UserDefaults {
 enum Fixtures {
     static let account = String(repeating: "ab", count: 32)
     static let context = "ctx-1"
+    static let namespace = String(repeating: "9a", count: 32)
+
+    static func invite() -> SpaceInvite {
+        SpaceInvite(
+            namespaceId: namespace, contextId: context, spaceName: "Family",
+            invitation: SignedGroupOpenInvitation(
+                invitation: GroupInvitationFromAdmin(
+                    inviterIdentity: Array(0..<32), groupId: Array(32..<64),
+                    expirationTimestamp: 1_787_740_000, secretSalt: Array(64..<96), invitedRole: 1,
+                    admitters: [account]),
+                inviterSignature: String(repeating: "5", count: 88),
+                inviterAccount: account))
+    }
 
     static let trackers: JSONValue = [
         [

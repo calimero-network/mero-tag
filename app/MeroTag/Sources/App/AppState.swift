@@ -58,22 +58,37 @@ public final class AppState: ObservableObject {
     @Published public var sessionNotice: String?
     @Published public private(set) var spaceError: String?
     @Published public private(set) var isOpeningSpace = false
+    @Published public private(set) var isCreatingSpace = false
+    @Published public private(set) var isJoiningSpace = false
+    /// An invite that arrived as a deep link, waiting to be accepted on the
+    /// space screen. Kept through sign-in.
+    @Published public var pendingInvite: String?
+    /// Something worth knowing about the space just created (not hosted yet).
+    @Published public private(set) var spaceNotice: String?
     @Published public private(set) var store: TrackerStore?
     @Published public private(set) var space: SpaceSelection?
 
     public let client: MeroClient
     public let preferences: SpacePreferences
     private let makeTransport: (CloudConnection) -> (any ContextTransport)?
+    private let makeDirectory: @MainActor (MeroClient) -> any SpaceDirectory
+    /// How long to wait for a joined space to reach the relay.
+    var syncAttempts = 8
+    var syncDelay: UInt64 = 1_500_000_000
     private var forward: AnyCancellable?
 
     public init(
         client: MeroClient? = nil,
         preferences: SpacePreferences = SpacePreferences(),
-        makeTransport: @escaping (CloudConnection) -> (any ContextTransport)? = { RelayTransport($0) }
+        makeTransport: @escaping (CloudConnection) -> (any ContextTransport)? = { RelayTransport($0) },
+        makeDirectory: @escaping @MainActor (MeroClient) -> any SpaceDirectory = {
+            CloudSpaces(cloud: $0.cloudSignIn, connection: $0.connection)
+        }
     ) {
         self.client = client ?? MeroClient()
         self.preferences = preferences
         self.makeTransport = makeTransport
+        self.makeDirectory = makeDirectory
         self.space = preferences.space
         // Views observe AppState only; re-publish the client's changes.
         forward = self.client.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
@@ -101,17 +116,33 @@ public final class AppState: ObservableObject {
         if client.isAuthenticated { await didSignIn() }
     }
 
-    /// A callback delivered to the app itself (`onOpenURL`) rather than to the
-    /// auth sheet.
+    /// A URL delivered to the app (`onOpenURL`): an invite link
+    /// (`merotag://join?invitation=…`, or the shareable https link when the OS
+    /// routes it here), or a wallet callback that bypassed the auth sheet.
     public func handleOpenURL(_ url: URL) async {
+        if SpaceInvite.decode(deepLink: url) != nil {
+            receiveInvite(url.absoluteString)
+            return
+        }
         guard url.scheme == Self.callbackScheme else { return }
         if await client.handleEnrolmentCallback(url), client.isAuthenticated {
             await didSignIn()
         }
     }
 
+    /// Hold an invite until the person accepts it on the space screen. While
+    /// signed out it waits for sign-in; with a space open, ``SpaceView``
+    /// offers to switch.
+    public func receiveInvite(_ raw: String) {
+        pendingInvite = raw
+        spaceError = nil
+    }
+
     private func didSignIn() async {
-        if let saved = preferences.space {
+        if pendingInvite != nil {
+            // An invite is waiting: show it rather than reopening the last space.
+            phase = .choosingSpace
+        } else if let saved = preferences.space {
             await openSpace(contextId: saved.contextId, displayName: saved.displayName)
             if phase != .ready { phase = .choosingSpace }
         } else {
@@ -123,6 +154,12 @@ public final class AppState: ObservableObject {
 
     /// Open `contextId` as the signed-in account and join it under `displayName`.
     public func openSpace(contextId rawId: String, displayName rawName: String) async {
+        await openSpace(contextId: rawId, displayName: rawName, attempts: 1)
+    }
+
+    /// As ``openSpace(contextId:displayName:)``, retrying the first read: a
+    /// space just joined or created reaches the relay asynchronously.
+    func openSpace(contextId rawId: String, displayName rawName: String, attempts: Int) async {
         let contextId = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         spaceError = nil
@@ -143,12 +180,24 @@ public final class AppState: ObservableObject {
         let service = MeroService(transport: transport, contextId: contextId, memberId: account)
         // Reaching the space before switching screens: a mistyped ID should be
         // an inline error, not an empty map.
-        do {
-            _ = try await service.getSpace()
-        } catch {
-            if let reason = TrackerStore.sessionEndReason(error) { return sessionEnded(reason) }
-            spaceError = "Couldn't open that space. Check the ID and that your account is a member. ("
-                + TrackerStore.message(for: error) + ")"
+        var lastError: Error?
+        for attempt in 1...max(attempts, 1) {
+            do {
+                _ = try await service.getSpace()
+                lastError = nil
+                break
+            } catch {
+                if let reason = TrackerStore.sessionEndReason(error) { return sessionEnded(reason) }
+                lastError = error
+                if attempt < attempts { try? await Task.sleep(nanoseconds: syncDelay) }
+            }
+        }
+        if let lastError {
+            spaceError = attempts > 1
+                ? "You joined, but the space hasn't reached your relay yet. Try again in a moment. ("
+                    + TrackerStore.message(for: lastError) + ")"
+                : "Couldn't open that space. Check that your account is a member. ("
+                    + TrackerStore.message(for: lastError) + ")"
             return
         }
 
@@ -160,6 +209,79 @@ public final class AppState: ObservableObject {
         self.store = store
         phase = .ready
         await store.bootstrap(displayName: displayName)
+    }
+
+    /// Found a new space for Mero Tag as this account and open it.
+    public func createSpace(name rawName: String, displayName rawDisplay: String) async {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = rawDisplay.trimmingCharacters(in: .whitespacesAndNewlines)
+        spaceError = nil
+        spaceNotice = nil
+        guard !name.isEmpty else { spaceError = "Give the space a name."; return }
+        guard !displayName.isEmpty else { spaceError = "Choose a name others will see."; return }
+        guard client.account != nil else { phase = .signedOut; return }
+
+        isCreatingSpace = true
+        defer { isCreatingSpace = false }
+        let created: CreatedSpace
+        do {
+            created = try await makeDirectory(client).createSpace(named: name)
+        } catch {
+            if let reason = TrackerStore.sessionEndReason(error) { return sessionEnded(reason) }
+            spaceError = "Couldn't create the space. (" + TrackerStore.message(for: error) + ")"
+            return
+        }
+        if !created.hosted {
+            spaceNotice = "Your space isn't hosted in Calimero Cloud yet, so people without their own node may not "
+                + "be able to join." + (created.hostingNote.map { " (\($0))" } ?? "")
+        }
+        await openSpace(contextId: created.contextId, displayName: displayName, attempts: syncAttempts)
+    }
+
+    /// Accept an invite (a link, a deep link or a bare token) and open the
+    /// space it is for. A refused join is kept rather than thrown: "already a
+    /// member" is fine to continue from, and only whether the space then
+    /// opens tells the two apart.
+    public func joinSpace(invite raw: String, displayName rawDisplay: String) async {
+        let displayName = rawDisplay.trimmingCharacters(in: .whitespacesAndNewlines)
+        spaceError = nil
+        guard let invite = SpaceInvite.decode(pasted: raw) else {
+            spaceError = "That isn't a Mero Tag invite link. Ask the space's owner to send it again."
+            return
+        }
+        guard !displayName.isEmpty else { spaceError = "Choose a name others will see."; return }
+        guard client.account != nil else { phase = .signedOut; return }
+
+        isJoiningSpace = true
+        defer { isJoiningSpace = false }
+        let hadRelay = client.connection?.relay != nil
+        var refusal: Error?
+        do {
+            try await makeDirectory(client).join(invite)
+        } catch {
+            if let reason = TrackerStore.sessionEndReason(error) { return sessionEnded(reason) }
+            refusal = error
+        }
+        // A relayless account just earned a relay: connect to it.
+        if !hadRelay { await client.restoreCloudSession() }
+        if let refusal, client.connection?.relay == nil {
+            spaceError = "This invite wasn't accepted. (" + TrackerStore.message(for: refusal) + ")"
+            return
+        }
+        await openSpace(
+            contextId: invite.contextId, displayName: displayName, attempts: refusal == nil ? syncAttempts : 1)
+        if phase == .ready {
+            pendingInvite = nil
+        } else if let refusal {
+            spaceError = "This invite wasn't accepted. (" + TrackerStore.message(for: refusal) + ")"
+        }
+    }
+
+    /// A shareable invite link to the open space, signed by this account.
+    public func inviteLink() async throws -> String {
+        guard let space else { throw SpaceDirectoryError.notInASpace }
+        let name = store?.space?.name ?? ""
+        return try await makeDirectory(client).invite(contextId: space.contextId, spaceName: name).shareableLink()
     }
 
     /// Leave the open space (stay signed in) to pick another.

@@ -18,6 +18,16 @@ enum Platform {
         #endif
     }
 
+    static func pastedString() -> String? {
+        #if canImport(UIKit)
+        return UIPasteboard.general.string
+        #elseif canImport(AppKit)
+        return NSPasteboard.general.string(forType: .string)
+        #else
+        return nil
+        #endif
+    }
+
     static func tap() {
         #if os(iOS)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
