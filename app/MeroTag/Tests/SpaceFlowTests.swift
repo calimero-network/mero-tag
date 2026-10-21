@@ -196,6 +196,22 @@ final class SpaceFlowTests: XCTestCase {
         XCTAssertNotNil(app.unreachableSpace)
     }
 
+    /// The retry goes with the error it came with: a retry that is then
+    /// refused shows the refusal alone, not a stale "Try again".
+    func testARetryThatIsRefusedDropsTheRetry() async throws {
+        let transport = Fixtures.transport()
+        transport.failures["get_space"] = MeroError.network("The network connection was lost.")
+        let app = await launch(transport)
+        XCTAssertNotNil(app.unreachableSpace)
+
+        transport.failures["get_space"] = MeroError.http(
+            HTTPError(status: 403, statusText: "Forbidden", url: "", headers: [:]))
+        await app.retryUnreachableSpace()
+        XCTAssertNil(app.unreachableSpace)
+        let error = try XCTUnwrap(app.spaceError)
+        XCTAssertTrue(error.contains("member"), error)
+    }
+
     /// A refusal is an answer: that one still points at membership, with no retry.
     func testARefusedSavedSpaceStillAsksAboutMembership() async throws {
         let transport = Fixtures.transport()

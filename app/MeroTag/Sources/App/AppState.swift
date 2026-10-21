@@ -224,6 +224,7 @@ public final class AppState: ObservableObject {
     public func receiveInvite(_ raw: String) {
         pendingInvite = raw
         spaceError = nil
+        unreachableSpace = nil
     }
 
     private func didSignIn() async {
@@ -250,7 +251,9 @@ public final class AppState: ObservableObject {
     func openSpace(contextId rawId: String, displayName rawName: String, attempts: Int) async {
         let contextId = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The retry belongs to the error it came with: a new attempt drops both.
         spaceError = nil
+        unreachableSpace = nil
         guard !contextId.isEmpty else { spaceError = "Enter the space ID you were given."; return }
         guard !displayName.isEmpty else { spaceError = "Choose a name others will see."; return }
         guard let account else {
@@ -326,6 +329,7 @@ public final class AppState: ObservableObject {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayName = rawDisplay.trimmingCharacters(in: .whitespacesAndNewlines)
         spaceError = nil
+        unreachableSpace = nil
         spaceNotice = nil
         guard !name.isEmpty else { spaceError = "Give the space a name."; return }
         guard !displayName.isEmpty else { spaceError = "Choose a name others will see."; return }
@@ -355,6 +359,7 @@ public final class AppState: ObservableObject {
     public func joinSpace(invite raw: String, displayName rawDisplay: String) async {
         let displayName = rawDisplay.trimmingCharacters(in: .whitespacesAndNewlines)
         spaceError = nil
+        unreachableSpace = nil
         guard let invite = SpaceInvite.decode(pasted: raw) else {
             spaceError = "That isn't a Mero Tag invite link. Ask the space's owner to send it again."
             return
