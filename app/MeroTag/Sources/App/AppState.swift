@@ -69,6 +69,11 @@ public final class AppState: ObservableObject {
     @Published public var pendingInvite: String?
     /// Something worth knowing about the space just created (not hosted yet).
     @Published public private(set) var spaceNotice: String?
+    /// A space this account is in that could not be reached (relay down,
+    /// offline, a slow relay at launch). Offered back as "Try again" on the
+    /// space screen, so a transient failure doesn't read as "you have no
+    /// space" and invite founding a duplicate.
+    @Published public private(set) var unreachableSpace: SpaceSelection?
     @Published public private(set) var store: TrackerStore?
     @Published public private(set) var space: SpaceSelection?
     /// The node, when signed in to one directly rather than through Cloud.
@@ -276,6 +281,12 @@ public final class AppState: ObservableObject {
             }
         }
         if let lastError {
+            if Self.isUnreachable(lastError) {
+                unreachableSpace = SpaceSelection(contextId: contextId, displayName: displayName)
+                spaceError = "Couldn't reach your space right now. It's still yours: try again in a moment. ("
+                    + TrackerStore.message(for: lastError) + ")"
+                return
+            }
             spaceError = attempts > 1
                 ? "You joined, but the space hasn't reached your relay yet. Try again in a moment. ("
                     + TrackerStore.message(for: lastError) + ")"
@@ -284,6 +295,7 @@ public final class AppState: ObservableObject {
             return
         }
 
+        unreachableSpace = nil
         let store = TrackerStore(service: service)
         store.onSessionEnded = { [weak self] reason in self?.sessionEnded(reason) }
         let selection = SpaceSelection(contextId: contextId, displayName: displayName)
@@ -292,6 +304,21 @@ public final class AppState: ObservableObject {
         self.store = store
         phase = .ready
         await store.bootstrap(displayName: displayName)
+    }
+
+    /// Retry the space that could not be reached.
+    public func retryUnreachableSpace() async {
+        guard let space = unreachableSpace else { return }
+        await openSpace(contextId: space.contextId, displayName: space.displayName)
+    }
+
+    /// The request never got an answer, or the relay couldn't serve it:
+    /// nothing says the account isn't a member, so try again later.
+    static func isUnreachable(_ error: Error) -> Bool {
+        switch classifyError(error).kind {
+        case .unreachable, .unavailable, .server: return true
+        default: return false
+        }
     }
 
     /// Found a new space for Mero Tag as this account and open it.
@@ -374,6 +401,7 @@ public final class AppState: ObservableObject {
             await store.goOffline()
         }
         store = nil
+        unreachableSpace = nil
         preferences.space = nil
         preferences.sharingTrackerId = nil
         phase = .choosingSpace
@@ -396,6 +424,7 @@ public final class AppState: ObservableObject {
         sessionNotice = reason + " Please sign in again."
         store?.stop()
         store = nil
+        unreachableSpace = nil
         phase = .signedOut
         let node = self.node
         self.node = nil
@@ -407,6 +436,7 @@ public final class AppState: ObservableObject {
 
     private func tearDown() async {
         store = nil
+        unreachableSpace = nil
         preferences.sharingTrackerId = nil
         await client.logout()
         await node?.mero.logout()
