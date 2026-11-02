@@ -20,8 +20,8 @@ Built for **Calimero core 1.0**:
 
 - the contract builds against `calimero-sdk` / `calimero-storage` tag `1.0.0-rc.3`
   (`min-runtime-version = "1.0.0-rc.3"`)
-- the app uses [`calimero-network/swift-sdk`](https://github.com/calimero-network/swift-sdk) pinned by revision to
-  the 1.0 port (swift-sdk#85); the pin moves to its merge commit once it lands
+- the app uses [`calimero-network/swift-sdk`](https://github.com/calimero-network/swift-sdk) pinned to
+  its `v0.5.0` release (`exactVersion` in `app/MeroTag/project.yml`)
 
 ## How the app talks to Calimero
 
@@ -72,7 +72,7 @@ For a device: open `app/MeroTag/MeroTag.xcodeproj` and set your team under *Sign
 `DEVELOPMENT_TEAM` in `project.yml`). A platform passkey on a real cluster also needs the
 `webcredentials:<cluster rp id>` associated domain.
 
-To build against a local swift-sdk checkout, temporarily replace the package's `url` / `revision` in
+To build against a local swift-sdk checkout, temporarily replace the package's `url` / `exactVersion` in
 `app/MeroTag/project.yml` with `path: /path/to/swift-sdk`, run `make app-gen`, and do not commit that change.
 
 ## Contract

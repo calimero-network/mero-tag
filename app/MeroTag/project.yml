@@ -11,14 +11,12 @@ packages:
   # The official Calimero Swift SDK (MeroKit + MeroKitUI), Calimero 1.0:
   # `CalimeroClient` over the sealed channel (attestation, passkeys, app
   # calls/views/events, orgs and invites, consent) and `MeroClient` for
-  # sign-in state.
-  # Pinned by revision to the head of swift-sdk#85 (`feat/calimero-1.0`), the
-  # 1.0 port. It moves to that PR's merge commit (then a release) once it
-  # lands — never `master`. To build against a local checkout instead, swap
-  # `url`/`revision` for `path: ../../../swift-sdk`, but never commit that.
+  # sign-in state. Pinned to the v0.5.0 release — never `master`. To build
+  # against a local checkout instead, swap `url`/`exactVersion` for
+  # `path: ../../../swift-sdk`, but never commit that.
   MeroKit:
     url: https://github.com/calimero-network/swift-sdk
-    revision: 35148e4de782c065f777e80c592d9548acd645cd
+    exactVersion: 0.5.0
 
 targets:
   MeroTag:
