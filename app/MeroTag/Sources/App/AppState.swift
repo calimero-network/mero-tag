@@ -109,7 +109,7 @@ public final class AppState: ObservableObject {
             client.cloud.map { CloudTransport(client: $0) }
         },
         makeDirectory: @escaping @MainActor (MeroClient) -> (any SpaceDirectory)? = { client in
-            client.cloud.map { CloudSpaces(client: $0) }
+            client.cloud.map { CloudSpaces(client: $0, passkey: client.passkeyForNode()) }
         }
     ) {
         self.client =

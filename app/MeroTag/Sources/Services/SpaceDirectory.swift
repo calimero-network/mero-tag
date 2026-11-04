@@ -44,11 +44,15 @@ public enum SpaceDirectoryError: LocalizedError, Equatable {
 ///   organization and so lets it reach the app instance.
 public struct CloudSpaces: SpaceDirectory {
     public let client: CalimeroClient
+    /// The passkey the account signed in with; minting an invite is a
+    /// step-up the node asks that passkey to sign.
+    public let passkey: (any PasskeyProvider)?
     /// The release new spaces run; the newest when `nil`.
     public var packageVersion: String?
 
-    public init(client: CalimeroClient, packageVersion: String? = nil) {
+    public init(client: CalimeroClient, passkey: (any PasskeyProvider)?, packageVersion: String? = nil) {
         self.client = client
+        self.passkey = passkey
         self.packageVersion = packageVersion
     }
 
@@ -65,7 +69,8 @@ public struct CloudSpaces: SpaceDirectory {
         guard let org = try await client.getApp(appId)["org"]?.stringValue, !org.isEmpty else {
             throw SpaceDirectoryError.notInAnOrganization
         }
-        let token = try await client.invite(org, role: .member)
+        guard let passkey else { throw SpaceDirectoryError.notConnected }
+        let token = try await client.invite(org, role: .member, passkey: passkey)
         return SpaceInvite(orgId: org, appId: appId, spaceName: spaceName, token: token)
     }
 
