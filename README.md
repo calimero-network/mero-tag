@@ -59,7 +59,7 @@ sentence in `fields.message`.
 ## Run it against a development cluster
 
 ```bash
-make tools        # once: mero-component, the component bundler
+make tools        # once: meroctl at the core release in ci/core-version
 make dev          # merod local on :2501-2503 (Docker on a Mac), then bundle + install the contract
 ```
 
@@ -109,7 +109,7 @@ cd web && npm ci && VITE_CALIMERO_MIN_RELEASE=<version> npm run build   # → we
 ```bash
 make setup        # check prereqs, build the component + signed dev bundle
 make logic-test   # cargo test (pure helpers, then the TestApp harness and scenarios on core's engine)
-make logic-build  # mero-component build → logic/res/mero_tag.wasm + logic/res/abi.json
+make logic-build  # meroctl app build → logic/res/mero_tag.wasm + logic/res/abi.json
 make logic-bundle # signed dev .mpk for a merod local cluster
 ```
 

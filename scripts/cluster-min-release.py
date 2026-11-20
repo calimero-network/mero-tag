@@ -28,7 +28,7 @@ import sys
 import urllib.parse
 import urllib.request
 
-DEFAULT_DIRECTORY = "https://manager.cloud.calimero.network/api/v2/directory"
+DEFAULT_DIRECTORY = "https://manager.cloud.calimero.network/api/directory"
 RELEASE_VERSION = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$")
 
 

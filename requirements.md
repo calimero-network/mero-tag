@@ -27,7 +27,7 @@ mero-tag/
 | Tool | Needed for | Install |
 |------|-----------|---------|
 | **Rust** + `wasm32-wasip2` | building the component contract | <https://rustup.rs>; `logic/rust-toolchain.toml` pins core's toolchain and target |
-| **mero-component** | component build + signed bundle | `make tools` (calimero-network/apps' component bundler) |
+| **meroctl** | component build + signed bundle | `make tools` (core's release in `ci/core-version`) |
 | **Full Xcode 16+** | building / running the app, XCTest, deploying to a device | Mac App Store, then `sudo xcode-select -s /Applications/Xcode.app` |
 | **XcodeGen** | generating the `.xcodeproj` | `brew install xcodegen` |
 | **A Calimero account** | signing in | created with a passkey on Mero Tag's sign-in page on first sign-in |

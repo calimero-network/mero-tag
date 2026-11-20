@@ -38,11 +38,9 @@
 # origin: the iOS app signs in, approves step-ups and gets consent decisions
 # back through it.
 #
-# The contract is a `calimero:app` component (calimero-sdk, core 1.0.0-rc.32).
-# `cargo mero` went with SDK 0.12 (core#4835), so the bundle is built, packed
-# and signed by `mero-component`, calimero-network/apps' component bundler
-# (core's own calimero-app-build, calimero-bundle and mero-sign underneath),
-# and published the way that repo publishes its component apps.
+# The contract is a `calimero:app` component (calimero-sdk, the core release in
+# ci/core-version). Core's released `meroctl`, at that release, builds it and
+# packs and signs the bundle with the served page (`frontend-dir`).
 
 name: Deploy Bundle
 
@@ -53,6 +51,7 @@ on:
     paths:
       - "logic/**"
       - "web/**"
+      - "ci/core-version"
   workflow_dispatch:
     inputs:
       version:
@@ -217,8 +216,20 @@ jobs:
           key: logic-${{ runner.os }}-${{ hashFiles('logic/Cargo.lock') }}
           restore-keys: logic-${{ runner.os }}-
 
-      - name: Setup mero-component
-        uses: ./.github/actions/install-mero-component
+      # core's released `meroctl` builds, packs, signs and inspects the bundle,
+      # at the release ci/core-version names (cached by it).
+      - name: Cache meroctl
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/meroctl
+          key: meroctl-${{ runner.os }}-${{ hashFiles('ci/core-version', 'scripts/install-meroctl.sh') }}
+
+      - name: Install meroctl
+        env:
+          MEROCTL_ROOT: ${{ runner.temp }}/meroctl
+        run: |
+          scripts/install-meroctl.sh
+          echo "$MEROCTL_ROOT/bin" >> "$GITHUB_PATH"
 
       # The served page connects to the cluster that serves it, and refuses any
       # node below this floor: CALIMERO_MIN_RELEASE when set, else the lowest
@@ -235,10 +246,10 @@ jobs:
           source="the repository variable CALIMERO_MIN_RELEASE"
           if [ -z "$floor" ]; then
             source="the lowest mero-tee release ${CLUSTER}'s nodes run now"
-            floor=$(python3 scripts/cluster-min-release.py --cluster "$CLUSTER") || floor=""
+            floor=$(python3 -I scripts/cluster-min-release.py --cluster "$CLUSTER") || floor=""
           fi
-          if [ -z "$floor" ]; then
-            echo "::error::no attestation floor for the served page: set the repository variable CALIMERO_MIN_RELEASE, or CALIMERO_CLUSTER to a cluster that answers"
+          if [[ ! "$floor" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::no attestation floor for the served page: set the repository variable CALIMERO_MIN_RELEASE (X.Y.Z), or CALIMERO_CLUSTER to a cluster that answers"
             exit 1
           fi
           echo "min-release=$floor" >> "$GITHUB_OUTPUT"
@@ -255,8 +266,13 @@ jobs:
         env:
           VITE_CALIMERO_MIN_RELEASE: ${{ steps.floor.outputs.min-release }}
         run: |
-          npm ci
+          set -euo pipefail
+          npm ci --no-audit --no-fund
+          rm -rf dist
           npm run build
+          [ -f dist/index.html ] || { echo "::error::the build wrote no web/dist/index.html"; exit 1; }
+          grep -rqF -- "$VITE_CALIMERO_MIN_RELEASE" dist ||
+            { echo "::error::web/dist does not carry the attestation floor: VITE_CALIMERO_MIN_RELEASE did not reach the build"; exit 1; }
 
       - name: Write signing key
         env:
@@ -287,9 +303,10 @@ jobs:
           echo "rev=$rev" >> "$GITHUB_OUTPUT"
           echo "::notice::signing a bundle built against core $rev"
 
-      # --output pins the filename so the publish step never reconstructs a
+      # --out pins the filename so the publish step never reconstructs a
       # versioned one (the default is dist/<package>-<version>.mpk) and can never
-      # pick up a stale .mpk from an earlier build.
+      # pick up a stale .mpk from an earlier build. The component is built first
+      # and passed as --wasm, so the build uses logic/target (the cache above).
       - name: Build & sign bundle
         working-directory: logic
         env:
@@ -297,7 +314,12 @@ jobs:
           VERSION: ${{ needs.check.outputs.version }}
         # --app-version: the check job already resolved the number against the
         # registry. The served page is packed from `frontend-dir` (web/dist).
-        run: mero-component bundle . --key "$RUNNER_TEMP/mero-sign-key.json" --app-version "$VERSION" --output "dist/$PACKAGE.mpk"
+        run: |
+          set -euo pipefail
+          mkdir -p res
+          meroctl app build . --out res/mero_tag.wasm --target-dir "$PWD/target"
+          meroctl app pack . --wasm res/mero_tag.wasm --key "$RUNNER_TEMP/mero-sign-key.json" \
+            --app-version "$VERSION" --out "dist/$PACKAGE.mpk"
 
       - name: Remove signing key
         if: always()
@@ -312,9 +334,12 @@ jobs:
           PACKAGE: ${{ needs.check.outputs.package }}
           VERSION: ${{ needs.check.outputs.version }}
         # Read from the signed manifest itself, after its signature verifies:
-        # what is checked is exactly what is uploaded.
+        # what is checked is exactly what is uploaded. `meroctl app inspect`
+        # prints `{bundleHash, manifest}`.
         run: |
-          mero-component inspect "logic/dist/$PACKAGE.mpk" > "$RUNNER_TEMP/manifest.json"
+          meroctl app inspect "logic/dist/$PACKAGE.mpk" | jq '.manifest' > "$RUNNER_TEMP/manifest.json"
+          jq -e '.frontend.entry' "$RUNNER_TEMP/manifest.json" >/dev/null ||
+            { echo "::error::the bundle carries no served page"; exit 1; }
           jq -e --arg p "$PACKAGE" --arg v "$VERSION" '.package == $p and .appVersion == $v' \
             "$RUNNER_TEMP/manifest.json" >/dev/null ||
             { echo "::error::the bundle is not $PACKAGE $VERSION"; exit 1; }

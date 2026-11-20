@@ -2,7 +2,7 @@
 logic/target/
 logic/res/
 
-# `mero-component bundle` output (signed .mpk)
+# `meroctl app pack` output (signed .mpk)
 logic/dist/
 
 # Swift / SwiftPM
