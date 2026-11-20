@@ -21,3 +21,10 @@ app/.env.integration.bak
 
 # Node home / logs (created under $HOME and /tmp, but ignore any local copies)
 *.log
+
+# Local signing team (app/MeroTag/Config/Signing.xcconfig)
+Signing.local.xcconfig
+
+# Served web page (web/)
+web/node_modules/
+web/dist/
